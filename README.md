@@ -88,7 +88,7 @@ FROM url(
 ) SETTINGS max_http_get_redirects=10;
 ```
 ```sql
-select formatReadableQuantity(count()) for uk_price_paid;
+select formatReadableQuantity(count()) from uk_price_paid;
 ```
 ```sql
 select * from uk_price_paid
