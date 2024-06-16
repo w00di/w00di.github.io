@@ -99,5 +99,6 @@ select
   avg(price),
   town
 from uk_price_paid
-group by town;
+group by town
+order by 1 desc;
 ```
