@@ -340,3 +340,120 @@ FROM system.parts
 WHERE (active = 1) AND (table LIKE '%pypi%')
 GROUP BY table;
 ```
+### Modeling Data
+#### Special Table Engines
+* Dictionary: For representing dictionary as a table
+* View: For implementing views - it only stores a SELECT query, no data
+* MaterializedView: stores the actual data from a corresponding SELECT query
+* File: Useful for exporting table data to a file or converting data from one format to another (CSV, TSV, JSON XML, etc.)
+* URL: Similar to File, but queries data from a remote HTTP/HTTPS server
+* Memory: Stores data only in memory (data is lost on restart), useful for testing
+* More: [Table Engines](https://clickhouse.com/docs/en/engines/table-engines)
+
+#### Data Types
+* Store floating point numbers as decimals instead
+* To define an array: use square brackets [] (or the array() function)
+* Nullable allows null to be used for missing values
+  * ```metric Nullable(UInt64)```
+  * Nullable types can not be a part of the primary key
+  * Values that are nullable will be skipped when running mathematical functions
+  * Only use it when its business logic and important to be ```null```
+* Enums: define enumerations
+  * ```device_type Enum('server' = 1, 'container` = 2, 'router' = 3)```
+  * Can only contain values in the ```Enum``` defintition
+* LowCardinality: Useful when you have a column with a relatively small number of unique values (10,000 or less)
+  *  Stores values as integers (uses a dictionary encoding)
+  *  You can dynamically add new values
+
+### Primary Keys & Primary Indexes
+* Primary Key can be defined inside or outside column list
+* ```Order By``` can be used as well
+* If both are defined ```PRIMARY KEY``` must be a prefix of the ```ORDER BY```
+* Query execution is significantly more effective and faster on a table where the primary key columns are order by cardinality in ascending order
+* Only add a column to a primary key if:
+  * You have lots of queries on the added column
+  * Adding another column allows you to skip quite long data ranges
+* Primary Keys have to fit in memory, if not, Clickhouse will not start
+```sql
+create database mike;
+
+create table mike.friends (
+    name String,
+    birthday Date,
+    age UInt8
+)
+Engine = MergeTree
+PRIMARY KEY name;
+
+ALTER TABLE mike.friends
+    ADD COLUMN meetings Array(DateTime);
+
+show create table mike.friends
+
+insert into mike.friends values
+    ('Michael','1970-12-02',54,['2024-11-05','1718632394']),
+    ('Thomas','1970-12-02',35,[now(),now() - interval 1 week]);
+
+select * from mike.friends;
+
+select meetings[1] from mike.friends;
+
+alter table mike.friends
+    add column size UInt64,
+    add column metric Nullable(UInt64);
+
+insert into mike.friends (size,metric) values
+    (100, 234234),
+    (NULL, 3245234),
+    (200, NULL);
+
+select * from mike.friends
+```
+```sql
+select uniqExact(COUNTRY)
+from pypi;
+
+select uniqExact(PROJECT)
+from pypi
+
+CREATE TABLE pypi3 (
+    TIMESTAMP DateTime,
+    COUNTRY_CODE LowCardinality(String),
+    URL String,
+    PROJECT LowCardinality(String)
+)
+ENGINE = MergeTree
+PRIMARY KEY (PROJECT, TIMESTAMP);
+
+show create table pypi2;
+
+INSERT INTO pypi3
+    SELECT * FROM pypi2;
+
+
+SELECT
+    table,
+    formatReadableSize(sum(data_compressed_bytes)) AS compressed_size,
+    formatReadableSize(sum(data_uncompressed_bytes)) AS uncompressed_size,
+    count() AS num_of_active_parts
+FROM system.parts
+WHERE (active = 1) AND (table LIKE 'pypi%')
+GROUP BY table;
+
+SELECT
+    toStartOfMonth(TIMESTAMP) AS month,
+    count() AS count
+FROM pypi2
+WHERE COUNTRY_CODE = 'US'
+GROUP BY
+    month
+ORDER BY
+    month ASC,
+    count DESC;
+```
+```sql
+
+
+
+
+
