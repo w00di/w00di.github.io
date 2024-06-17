@@ -481,7 +481,117 @@ FROM crypto_prices
 WHERE crypto_name LIKE 'B%'
 GROUP BY crypto_name
 ```
+```sql
+--Step 1:
+DESCRIBE pypi;
 
+--Step 2:
+SELECT uniqExact(COUNTRY_CODE)
+FROM pypi;
 
+/*
+ * You will notice there are only 186 unique values of the country code, which
+ * makes it a great candidate for LowCardinality.
+ */
 
+--Step 3:
+SELECT
+    uniqExact(PROJECT),
+    uniqExact(URL)
+FROM pypi;
+
+/*
+ * There are over 24,000 unique values of PROJECT, which is large - but not too
+ * large. We will try LowCardinality on this column as well and see if it
+ * improves storage and query performance. The URL has over 79,000 unique
+ * values, and we can assume that a URL could have a lot of different values,
+ * so it is probably a bad choice for LowCardinality.
+ */
+
+--Step 4:
+CREATE TABLE pypi3 (
+    TIMESTAMP DateTime,
+    COUNTRY_CODE LowCardinality(String),
+    URL String,
+    PROJECT LowCardinality(String)
+)
+ENGINE = MergeTree
+PRIMARY KEY (PROJECT, TIMESTAMP);
+
+INSERT INTO pypi3
+    SELECT * FROM pypi2;
+
+--Step 5:
+SELECT
+    table,
+    formatReadableSize(sum(data_compressed_bytes)) AS compressed_size,
+    formatReadableSize(sum(data_uncompressed_bytes)) AS uncompressed_size,
+    count() AS num_of_active_parts
+FROM system.parts
+WHERE (active = 1) AND (table LIKE 'pypi%')
+GROUP BY table;
+
+--Step 6:
+SELECT
+    toStartOfMonth(TIMESTAMP) AS month,
+    count() AS count
+FROM pypi2
+WHERE COUNTRY_CODE = 'US'
+GROUP BY
+    month
+ORDER BY
+    month ASC,
+    count DESC;
+```
+```sql
+--Step 1:
+DESCRIBE s3('https://learnclickhouse.s3.us-east-2.amazonaws.com/datasets/crypto_prices.parquet');
+
+--Step 2:
+CREATE TABLE crypto_prices (
+   trade_date Date,
+   crypto_name LowCardinality(String),
+   volume Float32,
+   price Float32,
+   market_cap Float32,
+   change_1_day Float32
+)
+ENGINE = MergeTree
+PRIMARY KEY (crypto_name, trade_date);
+
+--Step 3:
+INSERT INTO crypto_prices
+   SELECT *
+   FROM s3('https://learnclickhouse.s3.us-east-2.amazonaws.com/datasets/crypto_prices.parquet');
+
+--Step 4:
+SELECT count()
+FROM crypto_prices;
+
+--Step 5:
+SELECT count()
+FROM crypto_prices
+WHERE volume >= 1_000_000;
+
+/*
+ * It read all of the rows because volume is not part of the primary key.
+ */
+
+--Step 6:
+SELECT
+   avg(price)
+FROM crypto_prices
+WHERE crypto_name = 'Bitcoin';
+
+/*
+ * Only a single granule was processed. As crypto_name is a primary key,
+ * ClickHouse use it to optmize the query.
+ */
+
+--Step 7:
+SELECT
+   avg(price)
+FROM crypto_prices
+WHERE crypto_name LIKE 'B%';
+```
 
