@@ -298,7 +298,7 @@ ORDER BY c DESC;
  * filter by PROJECT will process a minimum amount of rows.
  */
 ```
-```
+```sql
 --Step 1:
 SELECT
     formatReadableSize(sum(data_compressed_bytes)) AS compressed_size,
