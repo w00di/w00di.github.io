@@ -102,6 +102,7 @@ from uk_price_paid
 group by town
 order by 1 desc;
 ```
+### avg() & count()
 ```sql
 SELECT *
 FROM s3('https://learnclickhouse.s3.us-east-2.amazonaws.com/datasets/crypto_prices.parquet')
