@@ -374,6 +374,7 @@ GROUP BY table;
   * You have lots of queries on the added column
   * Adding another column allows you to skip quite long data ranges
 * Primary Keys have to fit in memory, if not, Clickhouse will not start
+
 ```sql
 create database mike;
 
@@ -452,7 +453,34 @@ ORDER BY
     count DESC;
 ```
 ```sql
+DESCRIBE s3('https://learnclickhouse.s3.us-east-2.amazonaws.com/datasets/crypto_prices.parquet');
 
+CREATE TABLE crypto_prices (
+    trade_date Date,
+    crypto_name LowCardinality(String),
+    volume Float32,
+    price Float32,
+    market_cap Float32,
+    change_1_day Float32
+) Engine =  MergeTree
+PRIMARY KEY (crypto_name, trade_date)
+
+INSERT INTO crypto_prices
+SELECT *
+FROM s3('https://learnclickhouse.s3.us-east-2.amazonaws.com/datasets/crypto_prices.parquet');
+
+SELECT count()
+FROM crypto_prices
+
+SELECT *
+FROM crypto_prices
+WHERE volume >= 1000_000
+
+SELECT avg(price), crypto_name
+FROM crypto_prices
+WHERE crypto_name LIKE 'B%'
+GROUP BY crypto_name
+```
 
 
 
