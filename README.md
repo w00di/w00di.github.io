@@ -594,4 +594,268 @@ SELECT
 FROM crypto_prices
 WHERE crypto_name LIKE 'B%';
 ```
+### Insert Data
+```sql
+DESCRIBE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_{0..2}.gz','TabSeparatedWithNames')
+SETTINGS schema_inference_make_columns_nullable=false;
+
+
+SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_{0..2}.gz','TabSeparatedWithNames')
+LIMIT 100;
+
+CREATE TABLE taxi (
+    trip_id	Int64,
+    vendor_id	Int64,
+    pickup_date	Date,
+    pickup_datetime	DateTime64(9),
+    dropoff_date	Date,
+    dropoff_datetime	DateTime64(9),
+    store_and_fwd_flag	Int64,
+    rate_code_id	Int64,
+    pickup_longitude	Float64,
+    pickup_latitude	Float64,
+    dropoff_longitude	Float64,
+    dropoff_latitude	Float64,
+    passenger_count	Int64,
+    trip_distance	String,
+    fare_amount	String,
+    extra	String,
+    mta_tax	String,
+    tip_amount	String,
+    tolls_amount	Float64,
+    ehail_fee	Int64,
+    improvement_surcharge	String,
+    total_amount	String,
+    payment_type	String,
+    trip_type	Int64,
+    pickup	String,
+    dropoff	String,
+    cab_type	String,
+    pickup_nyct2010_gid	Int64,
+    pickup_ctlabel	Float64,
+    pickup_borocode	Int64,
+    pickup_ct2010	String,
+    pickup_boroct2010	String,
+    pickup_cdeligibil	String,
+    pickup_ntacode	String,
+    pickup_ntaname	String,
+    pickup_puma	Int64,
+    dropoff_nyct2010_gid	Int64,
+    dropoff_ctlabel	Float64,
+    dropoff_borocode	Int64,
+    dropoff_ct2010	String,
+    dropoff_boroct2010	String,
+    dropoff_cdeligibil	String,
+    dropoff_ntacode	String,
+    dropoff_ntaname	String,
+    dropoff_puma	Int64
+) ENGINE = MergeTree
+PRIMARY KEY (vendor_id, pickup_date);
+
+INSERT INTO taxi
+    SELECT *
+    FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_{0..2}.gz','TabSeparatedWithNames');
+
+select formatReadableQuantity(count())
+from taxi;
+
+select *
+from taxi
+limit 100
+
+select any(pickup_ntaname), count()
+from taxi
+group by pickup_ctlabel
+order by 2 desc
+limit 20
+
+select
+    min(pickup_date),
+    max(pickup_date),
+from taxi
+```
+
+```sql
+--Step 1:
+DESCRIBE s3('https://learn-clickhouse.s3.us-east-2.amazonaws.com/uk_property_prices.snappy.parquet')
+SETTINGS
+   schema_inference_make_columns_nullable=false;
+
+--Step 2:
+CREATE TABLE uk_price_paid
+(
+    price UInt32,
+    date Date,
+    postcode1 LowCardinality(String),
+    postcode2 LowCardinality(String),
+    type Enum('terraced' = 1, 'semi-detached' = 2, 'detached' = 3, 'flat' = 4, 'other' = 0),
+    is_new UInt8,
+    duration Enum('freehold' = 1, 'leasehold' = 2, 'unknown' = 0),
+    addr1 String,
+    addr2 String,
+    street LowCardinality(String),
+    locality LowCardinality(String),
+    town LowCardinality(String),
+    district LowCardinality(String),
+    county LowCardinality(String)
+)
+ENGINE = MergeTree
+ORDER BY (postcode1, postcode2, date);
+
+--Step 3:
+INSERT INTO uk_price_paid
+    SELECT *
+    FROM url('https://learn-clickhouse.s3.us-east-2.amazonaws.com/uk_property_prices.snappy.parquet');
+
+--Step 4:
+SELECT count()
+FROM uk_price_paid;
+
+--Step 5:
+SELECT avg(price)
+FROM uk_price_paid
+WHERE postcode1 = 'LU1' AND postcode2 = '5FT';
+
+/*
+ * The primary key contains postcode1 and postcode2 as the first two columns,
+ * so filtering by both allows ClickHouse to skip the most granules.
+ */
+
+--Step 6:
+SELECT avg(price)
+FROM uk_price_paid
+WHERE postcode2 = '5FT';
+
+/*
+ * The postcode2 column is the second column in the primary key, which allows
+ * ClickHouse to avoid about 1/3 of the table. Not bad, but note that the
+ * second value of a primary key is not as helpful in our dataset as the first
+ * column of the primary key. This all depends on your dataset, but this query
+ * gives you an idea of how you should think through and test if a column will
+ * be useful before adding it to the primary key. In this example, postcode2
+ * seems beneficial (assuming we need to filter by postcode2 regularly.)
+ */
+
+--Step 7:
+SELECT avg(price)
+FROM uk_price_paid
+WHERE town = 'YORK';
+
+/*
+ * The town column is not a part of the primary key, so the primary index does
+ * not provide any skipping of granules.
+ */
+```
+#### Modify Data During Insert
+```sql
+--Step 1:
+SELECT count()
+FROM s3('https://learn-clickhouse.s3.us-east-2.amazonaws.com/operating_budget.csv')
+SETTINGS format_csv_delimiter = '~';
+
+--Step 2:
+SELECT formatReadableQuantity(sum(actual_amount))
+FROM s3('https://learn-clickhouse.s3.us-east-2.amazonaws.com/operating_budget.csv')
+SETTINGS format_csv_delimiter = '~';
+
+--Step 3:
+SELECT formatReadableQuantity(sum(approved_amount))
+FROM s3('https://learn-clickhouse.s3.us-east-2.amazonaws.com/operating_budget.csv')
+SETTINGS format_csv_delimiter = '~';
+
+/*
+ * You get an exception telling you that trying to sum a String column is not
+ * allowed. Apparently, the approved_amount column is not entirely numeric
+ * data, and ClickHouse inferred that column as a String.
+ */
+
+--Step 4:
+DESCRIBE s3('https://learn-clickhouse.s3.us-east-2.amazonaws.com/operating_budget.csv')
+SETTINGS format_csv_delimiter = '~';
+
+--Step 5:
+SELECT
+    formatReadableQuantity(sum(toUInt32OrZero(approved_amount))),
+    formatReadableQuantity(sum(toUInt32OrZero(recommended_amount)))
+FROM s3('https://learn-clickhouse.s3.us-east-2.amazonaws.com/operating_budget.csv')
+SETTINGS format_csv_delimiter = '~';
+
+--Step 6:
+SELECT
+    formatReadableQuantity(sum(approved_amount)),
+    formatReadableQuantity(sum(recommended_amount))
+FROM s3('https://learn-clickhouse.s3.us-east-2.amazonaws.com/operating_budget.csv')
+SETTINGS
+format_csv_delimiter='~',
+schema_inference_hints='approved_amount UInt32, recommended_amount UInt32';
+
+--Step 7:
+CREATE TABLE operating_budget (
+    fiscal_year LowCardinality(String),
+    service LowCardinality(String),
+    department LowCardinality(String),
+    program LowCardinality(String),
+    program_code LowCardinality(String),
+    description String,
+    item_category LowCardinality(String),
+    approved_amount UInt32,
+    recommended_amount UInt32,
+    actual_amount Decimal(12,2),
+    fund LowCardinality(String),
+    fund_type Enum8('GENERAL FUNDS' = 1, 'FEDERAL FUNDS' = 2, 'OTHER FUNDS' = 3)
+)
+ENGINE = MergeTree
+PRIMARY KEY (fiscal_year, program);
+
+--Step 8:
+INSERT INTO operating_budget
+    WITH
+        splitByChar('(', c4) AS result
+    SELECT
+        c1 AS fiscal_year,
+        c2 AS service,
+        c3 AS department,
+        result[1] AS program,
+        splitByChar(')',result[2])[1] AS program_code,
+        c5 AS description,
+        c6 AS item_category,
+        toUInt32OrZero(c7) AS approved_amount,
+        toUInt32OrZero(c8) AS recommended_amount,
+        toDecimal64(c9, 2) AS actual_amount,
+        c10 AS fund,
+        c11 AS fund_type
+    FROM s3(
+        'https://learn-clickhouse.s3.us-east-2.amazonaws.com/operating_budget.csv',
+        'CSV',
+        'c1 String,
+        c2 String,
+        c3 String,
+        c4 String,
+        c5 String,
+        c6 String,
+        c7 String,
+        c8 String,
+        c9 String,
+        c10 String,
+        c11 String'
+        )
+    SETTINGS
+        format_csv_delimiter = '~',
+        input_format_csv_skip_first_lines=1;
+
+--Step 9:
+SELECT * FROM operating_budget;
+
+--Step 10:
+SELECT formatReadableQuantity(sum(approved_amount))
+FROM operating_budget
+WHERE fiscal_year = '2022';
+
+--Step 11:
+SELECT sum(actual_amount)
+FROM operating_budget
+WHERE fiscal_year = '2022'
+AND program_code = '031';
+```
 
