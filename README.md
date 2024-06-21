@@ -1127,3 +1127,199 @@ INSERT INTO uk_prices_by_town_dest
     FROM uk_price_paid
     WHERE date < toDate('2024-02-19 12:30:00');
 ```
+```sql
+SELECT count() FROM uk_price_paid
+WHERE type = 'terraced';
+
+CREATE VIEW uk_terraced_property
+AS
+    SELECT * FROM uk_price_paid
+    WHERE type = 'terraced';
+
+SELECT count() from uk_terraced_property;
+
+SELECT count() FROM (
+    SELECT * FROM uk_price_paid
+    WHERE type = 'terraced'
+);
+
+SELECT
+    max(price) AS max_price
+FROM uk_price_paid
+WHERE postcode1 = 'DH1' AND postcode2 = '1AD';
+
+CREATE MATERIALIZED VIEW uk_prices_by_town
+ENGINE = MergeTree
+ORDER BY town
+POPULATE AS
+    SELECT
+        price,
+        date,
+        street,
+        town,
+        district
+    FROM uk_price_paid;
+
+SELECT
+    max(price) AS max_price
+FROM uk_prices_by_town
+WHERE town='DURHAM';
+
+CREATE TABLE uk_prices_by_town_dest (
+    price UInt32,
+    date Date,
+    street LowCardinality(String),
+    town LowCardinality(String),
+    district LowCardinality(String)
+)
+ENGINE = MergeTree
+ORDER BY town;
+
+CREATE MATERIALIZED VIEW uk_prices_by_town_view
+TO uk_prices_by_town_dest
+AS
+    SELECT
+        price,
+        date,
+        street,
+        town,
+        district
+    FROM uk_price_paid
+    WHERE date >= toDate('2024-02-19 12:30:00');
+
+INSERT INTO uk_prices_by_town_dest
+    SELECT
+        price,
+        date,
+        street,
+        town,
+        district,
+    FROM uk_price_paid
+    WHERE date < toDate('2024-02-19 12:30:00');
+
+CREATE VIEW london_properties_view
+AS
+    SELECT
+        date,
+        price,
+        addr1,
+        addr2,
+        street
+    FROM uk_price_paid
+    WHERE town = 'LONDON';
+
+SELECT avg(price)
+FROM london_properties_view;
+
+SELECT count()
+FROM london_properties_view;
+
+SELECT count() 
+FROM uk_price_paid
+WHERE town = 'LONDON';
+
+EXPLAIN SELECT count()
+FROM london_properties_view;
+
+EXPLAIN SELECT count() 
+FROM uk_price_paid
+WHERE town = 'LONDON';
+
+CREATE VIEW properties_by_town_view
+AS
+    SELECT
+        date,
+        price,
+        addr1,
+        addr2,
+        street
+    FROM uk_price_paid
+    WHERE town={town:String};
+
+SELECT
+    max(price),
+    argMax(street,price)
+FROM properties_by_town_view(town='LIVERPOOL');
+
+SELECT
+    count(),
+    toYear(date) AS year,
+    avg(price),
+FROM uk_price_paid
+GROUP BY year;
+
+CREATE TABLE prices_by_year_dest (
+    date Date,
+    price UInt32,
+    addr1 String,
+    addr2 String,
+    street LowCardinality(String),
+    town LowCardinality(String),
+    district LowCardinality(String),
+    county LowCardinality(String)
+)
+ENGINE = MergeTree
+ORDER BY (town, date)
+PARTITION BY toYear(date);
+
+CREATE MATERIALIZED VIEW  prices_by_year_view
+TO prices_by_year_dest
+AS
+ SELECT
+    date,
+    price,
+    addr1,
+    addr2,
+    street,
+    town,
+    district,
+    county
+ FROM uk_price_paid;
+
+INSERT INTO prices_by_year_dest
+    SELECT
+        date,
+        price,
+        addr1,
+        addr2,
+        street,
+        town,
+        district,
+        county
+    FROM uk_price_paid;
+
+SELECT * FROM system.parts
+WHERE table='prices_by_year_dest';
+
+SELECT * FROM system.parts
+WHERE table='uk_price_paid';
+
+SELECT
+    count(),
+    avg(price)
+FROM prices_by_year_dest
+WHERE toYear(date) = '2020';
+
+SELECT
+    count() as count,
+    max(price) as mprice,
+    avg(price) as aprice,
+    quantiles(0.90)(price) as qprice
+FROM prices_by_year_dest
+WHERE toYear(date) = '2005'
+    AND county='STAFFORDSHIRE'
+    AND toMonth(date)=6
+GROUP BY county;
+
+INSERT INTO uk_price_paid VALUES
+    (125000, '2024-03-07', 'B77', '4JT', 'semi-detached', 0, 'freehold', 10,'',	'CRIGDON','WILNECOTE','TAMWORTH','TAMWORTH','STAFFORDSHIRE'),
+    (440000000, '2024-07-29', 'WC1B', '4JB', 'other', 0, 'freehold', 'VICTORIA HOUSE', '', 'SOUTHAMPTON ROW', '','LONDON','CAMDEN', 'GREATER LONDON'),
+    (2000000, '2024-01-22','BS40', '5QL', 'detached', 0, 'freehold', 'WEBBSBROOK HOUSE','', 'SILVER STREET', 'WRINGTON', 'BRISTOL', 'NORTH SOMERSET', 'NORTH SOMERSET');
+
+SELECT *
+FROM prices_by_year_dest
+WHERE toYear(date) = '2024';
+
+SELECT * FROM system.parts
+WHERE table='prices_by_year_dest';
+```
