@@ -1074,7 +1074,6 @@ ORDER BY 2 DESC;
 ```
 ### Materialized Views
 #### Views
-- Works like a store query
 - Not efficient
 - Works like a subquery
 Example
