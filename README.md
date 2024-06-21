@@ -1323,3 +1323,6 @@ WHERE toYear(date) = '2024';
 SELECT * FROM system.parts
 WHERE table='prices_by_year_dest';
 ```
+### Aggregations in Materialized Views
+
+
