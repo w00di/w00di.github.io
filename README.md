@@ -1072,3 +1072,59 @@ FROM uk_price_paid
 GROUP BY town
 ORDER BY 2 DESC;
 ```
+### Materialized Views
+#### Views
+- Works like a store query
+- Not efficient
+- Works like a subquery
+Example
+```sql
+SELECT count() FROM (
+    SELECT * FROM uk_price_paid
+    WHERE type = 'terraced'
+)
+```
+### Materialized Views
+- Insert Trigger
+- Whatever the FROM clause is is the trigger
+- Don't use populate if you're actively inserting into a table
+- Only happens on insert (not delete or update)
+
+1. Define the destination table
+```sql
+CREATE TABLE uk_prices_by_town_dest (
+    price UInt32,
+    date Date,
+    street LowCardinality(String),
+    town LowCardinality(String),
+    district LowCardinality(String)
+)
+ENGINE = MergeTree
+ORDER BY town;
+```
+2. Define the materialized view
+```sql
+CREATE MATERIALIZED VIEW uk_prices_by_town_view
+TO uk_prices_by_town_dest
+AS
+    SELECT
+        price,
+        date,
+        street,
+        town,
+        district
+    FROM uk_price_paid
+    WHERE date >= toDate('2024-02-19 12:30:00');
+```
+3. Populate the destination table
+```sql
+INSERT INTO uk_prices_by_town_dest
+    SELECT
+        price,
+        date,
+        street,
+        town,
+        district,
+    FROM uk_price_paid
+    WHERE date < toDate('2024-02-19 12:30:00');
+```
