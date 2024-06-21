@@ -1324,5 +1324,254 @@ SELECT * FROM system.parts
 WHERE table='prices_by_year_dest';
 ```
 ### Aggregations in Materialized Views
+#### Aggregation Merge Tree
+- rows with the same PRIMARY KEY (sort order) collapse into a single row
+- the set of values of the combined rows are aggregated
+- the columns are not simple numeric data types
+  - instead the columns keep tract of the state of each set of values
+- Supported Column Types are;
+  - [AggregateFunction](https://clickhouse.com/docs/en/sql-reference/data-types/aggregatefunction)
+  - [SimpleAggregateFunction](https://clickhouse.com/docs/en/sql-reference/data-types/simpleaggregatefunction)
+
+#### Summary of AggregationMergeTreeTable
+1. AggregateFunction/SimpleAggregateFunction: these are the data types of the columns in your table
+2. State/SimpleState: functions that copmute intermediate states of aggregations
+3. Merge: Takes the intermediate states of aggregations and "finishes" the computation
+
+```sql
+CREATE OR REPLACE TABLE uk_aggregated_prices (
+    district String,
+    max_price SimpleAggregateFunction(max, UInt32),
+    avg_price AggregateFunction(avg, UInt32),
+    quant90 AggregateFunction(quantiles(0.90), UInt32)
+)
+ENGINE = AggregatingMergeTree
+PRIMARY KEY district;
+
+CREATE MATERIALIZED VIEW uk_aggregated_prices_view
+TO uk_aggregated_prices
+AS
+    SELECT
+        district,
+        maxSimpleState(price) AS max_price,
+        avgState(price) AS avg_price,
+        quantilesState(0.90)(price) AS quant90
+    FROM uk_price_paid
+    GROUP BY district;
+
+INSERT INTO uk_price_paid VALUES
+    (64545, '2024-03-07', 'B77', '4JT', 'semi-detached', 0, 'freehold', 10,'',	'CRIGDON','WILNECOTE','TAMWORTH','TAMWORTH','STAFFORDSHIRE'),
+    (37674, '2024-07-29', 'WC1B', '4JB', 'other', 0, 'freehold', 'VICTORIA HOUSE', '', 'SOUTHAMPTON ROW', '','LONDON','CAMDEN', 'GREATER LONDON'),
+    (1567859678, '2024-01-22','BS40', '5QL', 'detached', 0, 'freehold', 'WEBBSBROOK HOUSE','', 'SILVER STREET', 'WRINGTON', 'BRISTOL', 'NORTH SOMERSET', 'NORTH SOMERSET');
+
+SELECT
+    district,
+    max(max_price),
+    avgMerge(avg_price),
+    quantilesMerge(0.90)(quant90)
+FROM uk_aggregated_prices
+GROUP BY district;
+```
+```sql
+--Step 1:
+SELECT
+    town,
+    sum(price) AS sum_price,
+    formatReadableQuantity(sum_price)
+FROM uk_price_paid
+GROUP BY town
+ORDER BY sum_price DESC;
+
+--Step 2:
+CREATE TABLE prices_sum_dest
+(
+    town LowCardinality(String),
+    sum_price UInt64
+)
+ENGINE = SummingMergeTree
+PRIMARY KEY town;
+
+CREATE MATERIALIZED VIEW prices_sum_view
+TO prices_sum_dest
+AS
+    SELECT
+        town,
+        sum(price) AS sum_price
+    FROM uk_price_paid
+    GROUP BY town;
+
+INSERT INTO prices_sum_dest
+    SELECT
+        town,
+        sum(price) AS sum_price
+    FROM uk_price_paid
+    GROUP BY town;
+
+--Step 3:
+SELECT count()
+FROM prices_sum_dest;
+
+--Step 4:
+SELECT
+    town,
+    sum(price) AS sum_price,
+    formatReadableQuantity(sum_price)
+FROM uk_price_paid
+WHERE town = 'LONDON'
+GROUP BY town;
+
+SELECT
+    town,
+    sum_price AS sum,
+    formatReadableQuantity(sum)
+FROM prices_sum_dest
+WHERE town = 'LONDON';
+
+INSERT INTO uk_price_paid (price, date, town, street)
+VALUES
+    (4294967295, toDate('2024-01-01'), 'LONDON', 'My Street1');
+
+/*
+ * The issue is that prices_sum_dest might have multiple rows with the same
+ * primary key (e.g. LONDON). Therefore, you should always aggregate the rows
+ * by using sum and the GROUP BY in the query.
+ */
+/* The fixed query looks like the following: */
+
+SELECT
+    town,
+    sum(sum_price) AS sum,
+    formatReadableQuantity(sum)
+FROM prices_sum_dest
+WHERE town = 'LONDON'
+GROUP BY town;
+
+--Step 5:
+SELECT
+    town,
+    sum(sum_price) AS sum,
+    formatReadableQuantity(sum)
+FROM prices_sum_dest
+GROUP BY town
+ORDER BY sum DESC
+LIMIT 10;
+```
+```sql
+--Step 1:
+WITH
+    toStartOfMonth(date) AS month
+SELECT
+    month,
+    min(price) AS min_price,
+    max(price) AS max_price
+FROM uk_price_paid
+GROUP BY month
+ORDER BY month DESC;
+
+WITH
+    toStartOfMonth(date) AS month
+SELECT
+    month,
+    avg(price)
+FROM uk_price_paid
+GROUP BY month
+ORDER BY month DESC;
+
+WITH
+    toStartOfMonth(date) AS month
+SELECT
+    month,
+    count()
+FROM uk_price_paid
+GROUP BY month
+ORDER BY month DESC;
+
+--Step 2:
+CREATE TABLE uk_prices_aggs_dest (
+    month Date,
+    min_price SimpleAggregateFunction(min, UInt32),
+    max_price SimpleAggregateFunction(max, UInt32),
+    volume AggregateFunction(count, UInt32),
+    avg_price AggregateFunction(avg, UInt32)
+)
+ENGINE = AggregatingMergeTree
+PRIMARY KEY month;
+
+CREATE MATERIALIZED VIEW uk_prices_aggs_view
+TO uk_prices_aggs_dest
+AS
+    WITH
+        toStartOfMonth(date) AS month
+    SELECT
+        month,
+        minSimpleState(price) AS min_price,
+        maxSimpleState(price) AS max_price,
+        countState(price) AS volume,
+        avgState(price) AS avg_price
+    FROM uk_price_paid
+    GROUP BY month;
+
+INSERT INTO uk_prices_aggs_dest
+    WITH
+        toStartOfMonth(date) AS month
+    SELECT
+        month,
+        minSimpleState(price) AS min_price,
+        maxSimpleState(price) AS max_price,
+        countState(price) AS volume,
+        avgState(price) AS avg_price
+    FROM uk_price_paid
+    WHERE date < toDate('2024-01-01')
+    GROUP BY month;
+
+--Step 3:
+SELECT * FROM uk_prices_aggs_dest;
+
+--Step 4:
+SELECT
+    month,
+    min(min_price),
+    max(max_price)
+FROM uk_prices_aggs_dest
+WHERE
+    month >= (toStartOfMonth(now()) - (INTERVAL 12 MONTH))
+    AND month < toStartOfMonth(now())
+GROUP BY month
+ORDER BY month DESC;
+
+--Step 5:
+SELECT
+    month,
+    avgMerge(avg_price)
+FROM uk_prices_aggs_dest
+WHERE
+    month >= (toStartOfMonth(now()) - (INTERVAL 2 YEAR))
+    AND month < toStartOfMonth(now())
+GROUP BY month
+ORDER BY month DESC;
+
+--Step 6:
+SELECT
+    countMerge(volume)
+FROM uk_prices_aggs_dest
+WHERE toYear(month) = '2020';
+
+--Step 7:
+INSERT INTO uk_price_paid (date, price, town) VALUES
+    ('2024-08-01', 10000, 'Little Whinging'),
+    ('2024-08-01', 1, 'Little Whinging');
+
+--Step 8:
+SELECT
+    month,
+    countMerge(volume),
+    min(min_price),
+    max(max_price)
+FROM uk_prices_aggs_dest
+WHERE toYYYYMM(month) = '202408'
+GROUP BY month;
+```
 
 
+
+ 
