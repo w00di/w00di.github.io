@@ -858,4 +858,112 @@ FROM operating_budget
 WHERE fiscal_year = '2022'
 AND program_code = '031';
 ```
+### Analyzing Data
+```sql
+SELECT
+    town
+    count() as c
+FROM uk_price_paid
+GROUP BY town
+LIMIT 20
+FORMAT Vertical
+
+with
+    'LONDON' as my_town
+select
+    avg(price)
+from uk_price_paid
+where town = my_town
+
+with most_expensive AS (
+        select * from uk_price_paid
+        order by price desc
+        limit 10
+)
+select
+    avg(price)
+from most_expensive
+
+SELECT
+    any(town),
+    district,
+    count() as c
+FROM uk_price_paid
+GROUP BY district
+Order by c desc
+LIMIT 20
+
+SELECT
+    avg(price) OVER (PARTITION BY postcode1),
+    *
+FROM uk_price_paid
+WHERE type='terraced'
+AND postcode1 != ''
+LIMIT 100
+
+SELECT DISTINCT lower(town)
+FROM uk_price_paid
+LIMIT 10
+
+SELECT sum(price)
+FROM uk_price_paid
+
+select
+    count()
+from uk_price_paid
+where position(street, 'KING') > 0;
+
+select
+    count()
+from uk_price_paid
+where multiFuzzyMatchAny(street, 1, ['KING']);
+
+select distinct
+    street,
+    multiSearchAllPositionsCaseInsensitive(
+        street,
+        ['abbey','road']
+    ) AS positions
+FROM uk_price_paid
+WHERE NOT has(positions, 0);
+
+SELECT
+    max(price),
+    toStartOfDay(date) AS day
+FROM uk_price_paid
+GROUP BY day
+ORDER BY day desc;
+
+select now() as today;
+
+With now() as today
+select today - INTERVAL 1 HOUR
+
+SELECT
+    town,
+    max(price),
+    argMax(street,price)
+FROM uk_price_paid
+GROUP BY town
+
+CREATE FUNCTION mergePostcode AS (p1,p2) -> concat(p1,p2)
+
+select mergePostcode(postcode1, postcode2)
+from uk_price_paid;
+
+SELECT quantiles(0.90)(price) from uk_price_paid
+WHERE toYear(date) >= '2020';
+
+SELECT uniq(street) FROM uk_price_paid;
+
+SELECT uniqExact(street) FROM uk_price_paid;
+
+SELECT topK(10)(street)
+FROM uk_price_paid;
+
+SELECT topKIf(10)(street, street != '')
+FROM uk_price_paid;
+
+SELECT arrayJoin(splitByChar(' ', street)) FROM uk_price_paid LIMIT 1000
+```
 
