@@ -1571,6 +1571,25 @@ FROM uk_prices_aggs_dest
 WHERE toYYYYMM(month) = '202408'
 GROUP BY month;
 ```
+### Joins
+#### Algos (Fast to Slow)
+- direct: the right hand table is represented as key-value pairs in memory using a Dictionary or the Join table engine
+- parallel_hash (mem): Similar to hash, but splits the right table into several hash tables
+- hash (mem): Creates an in-memory hash table of the right table
+- full_sorting_merge: The classic sort-merge join
+- grace_hash: Similar to hash but does not need to fit in memory
+- partial_merge: a variant of sort-merge that minimizes memory usage
+
+- Put the smaller table on the right ALWAYS
+
+#### 2 Types of sort-merge joins
+- full_sorting_merge: both table are sorted before joining
+- partial_merge: the right hand table is sorted before joining
+
+#### Direct Joins
+- Dictionary
+  - A special type of key-value "table"
+  - Stored in memory
 
 
 
