@@ -969,85 +969,106 @@ SELECT arrayJoin(splitByChar(' ', street)) FROM uk_price_paid LIMIT 1000
 ```sql
 --Step 1:
 SELECT *
-FROM s3('https://learnclickhouse.s3.us-east-2.amazonaws.com/datasets/mortgage_rates.csv');
+FROM uk_price_paid
+WHERE price >= 100_000_000
+ORDER BY price desc;
 
 --Step 2:
-CREATE DICTIONARY uk_mortgage_rates (
-    date DateTime64,
-    variable Decimal32(2),
-    fixed Decimal32(2),
-    bank Decimal32(2)
-)
-PRIMARY KEY date
-SOURCE(
-  HTTP(
-   url 'https://learnclickhouse.s3.us-east-2.amazonaws.com/datasets/mortgage_rates.csv'
-   format 'CSVWithNames'
-  )
-)
-LAYOUT(COMPLEX_KEY_HASHED())
-LIFETIME(2628000000)
-SETTINGS(date_time_input_format = 'best_effort'); --This setting is only needed for non-Cloud users
+SELECT count()
+FROM uk_price_paid
+WHERE
+    price > 1_000_000
+    AND date >= toDate('2022-01-01') AND date <= toDate('2022-12-31');
 
 --Step 3:
-SELECT *
-FROM uk_mortgage_rates;
+SELECT uniqExact(town)
+FROM uk_price_paid;
 
 --Step 4:
-WITH
-    toStartOfMonth(uk_price_paid.date) AS month
 SELECT
-    month,
-    count(),
-    any(variable),
+    town,
+    count() AS c
 FROM uk_price_paid
-JOIN uk_mortgage_rates
-ON month = toStartOfMonth(uk_mortgage_rates.date)
-GROUP BY month;
+GROUP BY town
+ORDER BY c DESC
+LIMIT 1;
 
 --Step 5:
-WITH
-    toStartOfMonth(uk_price_paid.date) AS month
-SELECT
-    month,
-    count(),
-    any(variable),
-FROM uk_price_paid
-JOIN uk_mortgage_rates
-ON month = toStartOfMonth(uk_mortgage_rates.date)
-GROUP BY month
-ORDER BY 2 DESC;
+SELECT topKIf(10)(town, town != 'LONDON')
+FROM uk_price_paid;
 
 --Step 6:
 SELECT
-    corr(toFloat32(count),toFloat32(variable))
-FROM (
-    WITH
-        toStartOfMonth(uk_price_paid.date) AS month
-    SELECT
-        month,
-        count() AS count,
-        any(variable) AS variable
-    FROM uk_price_paid
-    JOIN uk_mortgage_rates
-    ON month = toStartOfMonth(uk_mortgage_rates.date)
-    GROUP BY month
-);
+    town,
+    avg(price) AS avg_price
+FROM uk_price_paid
+GROUP BY town
+ORDER BY avg_price DESC
+LIMIT 10;
 
 --Step 7:
 SELECT
-    corr(toFloat32(count),toFloat32(fixed))
-FROM (
-    WITH
-        toStartOfMonth(uk_price_paid.date) AS month
-    SELECT
-        month,
-        count() AS count,
-        any(fixed) AS fixed
+    addr1,
+    addr2,
+    street,
+    town
+FROM uk_price_paid
+ORDER BY price DESC
+LIMIT 1;
+
+--Step 8:
+SELECT
+    avgIf(price, type = 'detached'),
+    avgIf(price, type = 'semi-detached'),
+    avgIf(price, type = 'terraced'),
+    avgIf(price, type = 'flat'),
+    avgIf(price, type = 'other')
+FROM uk_price_paid;
+
+SELECT type, avg(price) as avg_price
+FROM uk_price_paid
+GROUP BY type;
+
+--Step 9:
+SELECT
+    formatReadableQuantity(sum(price))
+FROM uk_price_paid
+WHERE
+    county IN ['AVON','ESSEX','DEVON','KENT','CORNWALL']
+    AND
+    date >= toDate('2020-01-01') AND date <= toDate('2020-12-31');
+
+
+--Step 10:
+SELECT
+    toStartOfMonth(date) AS month,
+    avg(price) AS avg_price
+FROM uk_price_paid
+WHERE
+    date >= toDate('2005-01-01') AND date <= toDate('2010-12-31')
+GROUP BY month
+ORDER BY month ASC;
+
+--Step 11:
+SELECT
+    toStartOfDay(date) AS day,
+    count()
+FROM uk_price_paid
+WHERE
+    town = 'LIVERPOOL'
+    AND date >= toDate('2020-01-01') AND date <= toDate('2020-12-31')
+GROUP BY day
+ORDER BY day ASC;
+
+--Step 12:
+WITH (
+    SELECT max(price)
     FROM uk_price_paid
-    JOIN uk_mortgage_rates
-    ON month = toStartOfMonth(uk_mortgage_rates.date)
-    WHERE month >= toDate('2000-01-01')
-    GROUP BY month
-);
+) AS overall_max
+SELECT
+    town,
+    max(price) / overall_max
+FROM uk_price_paid
+GROUP BY town
+ORDER BY 2 DESC;
 ```
