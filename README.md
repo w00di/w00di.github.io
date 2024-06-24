@@ -1116,6 +1116,7 @@ AS
     WHERE date >= toDate('2024-02-19 12:30:00');
 ```
 3. Populate the destination table
+
 ```sql
 INSERT INTO uk_prices_by_town_dest
     SELECT
@@ -1127,6 +1128,7 @@ INSERT INTO uk_prices_by_town_dest
     FROM uk_price_paid
     WHERE date < toDate('2024-02-19 12:30:00');
 ```
+
 ```sql
 SELECT count() FROM uk_price_paid
 WHERE type = 'terraced';
@@ -1323,6 +1325,7 @@ WHERE toYear(date) = '2024';
 SELECT * FROM system.parts
 WHERE table='prices_by_year_dest';
 ```
+
 ### Aggregations in Materialized Views
 #### Aggregation Merge Tree
 - rows with the same PRIMARY KEY (sort order) collapse into a single row
